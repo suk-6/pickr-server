@@ -8,6 +8,7 @@ WORKDIR /app
 COPY . /app
 
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --prod --frozen-lockfile
+RUN pnpm i -g @nestjs/cli
 RUN pnpm run build
 
 FROM node:20
