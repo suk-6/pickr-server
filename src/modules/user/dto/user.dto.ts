@@ -1,23 +1,28 @@
+import { IsString, Matches } from 'class-validator';
+
 import { ApiProperty } from '@nestjs/swagger';
 
-import { $Enums, User } from '@prisma/client';
+import { User } from '@prisma/client';
 
 export class UserDTO implements User {
-  @ApiProperty({ description: '사용자 ID (UUID)' })
+  @ApiProperty({ description: 'User ID' })
   id: string;
 
-  @ApiProperty({ description: 'OAuth Platform' })
-  provider: $Enums.Provider;
+  @IsString()
+  @ApiProperty({ description: 'User Login ID' })
+  loginId: string;
 
-  @ApiProperty({ description: 'Provider ID' })
-  providerId: string;
+  @IsString()
+  @ApiProperty({ description: 'User Password' })
+  password: string;
 
-  @ApiProperty({ description: '사용자 이메일' })
-  email: string;
+  @Matches(/^010-[0-9]{4}-[0-9]{4}$/)
+  @ApiProperty({ description: 'User Phone Number (010-0000-0000)' })
+  phone: string;
 
-  @ApiProperty({ description: '사용자 생성일' })
+  @ApiProperty({ description: 'User Created At' })
   createdAt: Date;
 
-  @ApiProperty({ description: '사용자 정보 수정일' })
+  @ApiProperty({ description: 'User Updated At' })
   updatedAt: Date;
 }

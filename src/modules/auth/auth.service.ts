@@ -1,25 +1,31 @@
-import { OAuth2Client } from 'google-auth-library';
+import { compare, genSalt, hash } from 'bcrypt';
 
 import { Cache } from '@nestjs/cache-manager';
-import { Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  InternalServerErrorException,
+  NotFoundException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 
-import { Provider } from '@prisma/client';
-
-import appleOAuthDecrypt from '@common/utils/apple/decrypt';
+import { JwtPhonePayload } from '@common/models/phone';
+import { CoolsmsService } from '@common/modules/coolsms/coolsms.service';
 
 import { UserService } from '@modules/user/user.service';
 
+import { RegisterDTO } from './dto/register.dto';
+
 @Injectable()
 export class AuthService {
-  private readonly client = new OAuth2Client();
-
   constructor(
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     private readonly cacheService: Cache,
     private readonly userService: UserService,
+    private readonly coolsmsService: CoolsmsService,
   ) {}
 
   private async _generateAccessToken(id: string) {
@@ -71,43 +77,85 @@ export class AuthService {
     await this.cacheService.del(`REFRESH/${id}`);
   }
 
-  public async googleLogin(idToken: string) {
-    const ticket = await this.client.verifyIdToken({
-      idToken,
-    });
+  public async login(loginId: string, password: string) {
+    const user = await this.userService.findOneById(loginId);
 
-    const payload = ticket.getPayload();
+    if (
+      !user || // 유저를 찾지 못함
+      (user && !(await compare(password, user.password))) // 비밀번호가 일치하지 않음
+    )
+      throw new NotFoundException('아이디 또는 비밀번호가 잘못되었습니다.');
 
-    let user = await this.userService.findOneByProvider(
-      Provider.GOOGLE,
-      payload.sub,
-    );
-
-    if (!user)
-      user = await this.userService.create({
-        email: payload.email,
-        provider: Provider.GOOGLE,
-        providerId: payload.sub,
-      });
-
-    return await this.generateTokens(user.id);
+    return this.generateTokens(user.id);
   }
 
-  public async appleLogin(idToken: string) {
-    const appleUser = await appleOAuthDecrypt(idToken);
+  public async register(dto: RegisterDTO) {
+    if (await this.userService.findOneById(dto.loginId))
+      throw new ConflictException(
+        '이미 해당 아이디를 사용하는 유저가 존재합니다.',
+      );
 
-    let user = await this.userService.findOneByProvider(
-      Provider.APPLE,
-      appleUser.sub,
+    const hashedPassword = await hash(dto.password, await genSalt(10));
+
+    const user = await this.userService.create({
+      loginId: dto.loginId,
+      password: hashedPassword,
+    });
+
+    return this.generateTokens(user.id);
+  }
+
+  public async requestPhoneOTP(id: string, phone: string) {
+    await this.cacheService.del(`PHONE/${id}`);
+
+    const phoneToken = await this.jwtService.signAsync(
+      {
+        id,
+        phone,
+      },
+      {
+        secret: this.configService.get('JWT_SECRET'),
+        expiresIn: '3m',
+      },
     );
 
-    if (!user)
-      user = await this.userService.create({
-        email: appleUser.email ?? '',
-        provider: Provider.APPLE,
-        providerId: appleUser.sub,
-      });
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
 
-    return await this.generateTokens(user.id);
+    await this.cacheService.set(`PHONE/${id}`, otp, 180000); // 3분
+    await this.coolsmsService.sendSMS(
+      phone,
+      `[Pickr] 인증번호 [${otp}]를 입력해주세요.`,
+    );
+
+    return { phoneToken };
+  }
+
+  public async registerPhone(userId: string, phoneToken: string, otp: string) {
+    const { id, phone } = await this.jwtService.verifyAsync<JwtPhonePayload>(
+      phoneToken,
+      {
+        secret: this.configService.get('JWT_SECRET'),
+      },
+    );
+
+    if (userId !== id)
+      throw new BadRequestException('이 계정에서 요청한 인증이 아닙니다.');
+
+    const realOTP = await this.cacheService.get<string>(`PHONE/${userId}`);
+
+    if (realOTP !== otp)
+      throw new BadRequestException('인증번호가 맞지 않습니다.');
+
+    await this.cacheService.del(`PHONE/${userId}`);
+
+    try {
+      await this.userService.registerPhone(userId, phone);
+    } catch {
+      throw new InternalServerErrorException(
+        '휴대전화 번호 등록에 문제가 생겼습니다.',
+      );
+    }
+
+    return { success: true };
   }
 }

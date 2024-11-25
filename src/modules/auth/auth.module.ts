@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 
+import { CoolsmsModule } from '@common/modules/coolsms';
+
 import { UserModule } from '@modules/user';
 
 import { AuthController } from './auth.controller';
@@ -20,6 +22,7 @@ import { RefreshStrategy } from './strategies/refresh.strategy.';
         signOptions: { expiresIn: '1d' },
       }),
     }),
+    CoolsmsModule,
   ],
   controllers: [AuthController],
   providers: [AuthService, AccessStrategy, RefreshStrategy],

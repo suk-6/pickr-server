@@ -1,4 +1,4 @@
-version: "3"
+version: '3'
 
 services:
   app:
@@ -6,7 +6,7 @@ services:
       context: .
       dockerfile: Dockerfile
     restart: always
-    # ports:
-    #   - 3000:3000
-    # env_file:
-    #   - .env
+    env_file:
+      - .env
+    ports:
+      - 3000:3000

@@ -1,8 +1,12 @@
 import { CurrentUser } from 'src/common';
 
-import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, Put, UseGuards } from '@nestjs/common';
 import {
+  ApiBadRequestResponse,
   ApiBearerAuth,
+  ApiConflictResponse,
+  ApiInternalServerErrorResponse,
+  ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
@@ -12,8 +16,13 @@ import {
 import { User } from '@prisma/client';
 
 import { AuthService } from './auth.service';
-import { AppleLoginDTO } from './dto/apple.login.dto';
-import { GoogleLoginDTO } from './dto/google.login.dto';
+import { LoginDTO } from './dto/login.dto';
+import {
+  PhoneTokenDTO,
+  PhoneTokenWithOtpDTO,
+  RequestOtpDTO,
+} from './dto/phone.dto';
+import { RegisterDTO } from './dto/register.dto';
 import { TokenDto } from './dto/token.dto';
 import { AccessGuard } from './guards/access.guard';
 import { RefreshGuard } from './guards/refresh.guard';
@@ -33,6 +42,14 @@ export class AuthController {
     return await this.authService.generateTokens(id);
   }
 
+  @Get('/login')
+  @ApiOperation({ summary: 'Login' })
+  @ApiOkResponse({ description: 'Login successful', type: TokenDto })
+  @ApiNotFoundResponse({ description: '로그인 실패' })
+  public async login(@Body() { loginId, password }: LoginDTO) {
+    return await this.authService.login(loginId, password);
+  }
+
   @Get('/logout')
   @UseGuards(AccessGuard)
   @ApiBearerAuth()
@@ -43,17 +60,41 @@ export class AuthController {
     return await this.authService.removeRefreshToken(id);
   }
 
-  @Post('/app/google')
-  @ApiOperation({ summary: 'Login with Google' })
-  @ApiOkResponse({ description: 'Login successful', type: TokenDto })
-  public async googleLogin(@Body() { idToken }: GoogleLoginDTO) {
-    return await this.authService.googleLogin(idToken);
+  @Post('/register')
+  @ApiOperation({ summary: '회원가입' })
+  @ApiOkResponse({ description: 'register successful', type: TokenDto })
+  @ApiConflictResponse({
+    description: '이미 해당 아이디를 사용하는 유저가 존재함',
+  })
+  public async register(@Body() dto: RegisterDTO) {
+    return await this.authService.register(dto);
   }
 
-  @Post('/app/apple')
-  @ApiOperation({ summary: 'Login with Apple' })
-  @ApiOkResponse({ description: 'Login successful', type: TokenDto })
-  public async appleLogin(@Body() { idToken }: AppleLoginDTO) {
-    return await this.authService.appleLogin(idToken);
+  @Get('/phone')
+  @UseGuards(AccessGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '전화번호 등록 OTP 요청하기' })
+  @ApiOkResponse({ description: 'Phone Token', type: PhoneTokenDTO })
+  public async requestPhoneOTP(
+    @CurrentUser() { id }: Pick<User, 'id'>,
+    @Body() { phone }: RequestOtpDTO,
+  ) {
+    return await this.authService.requestPhoneOTP(id, phone);
+  }
+
+  @Put('/phone')
+  @UseGuards(AccessGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '전화번호 등록' })
+  @ApiOkResponse({ description: '성공' })
+  @ApiBadRequestResponse({ description: '인증번호가 맞지 않음' })
+  @ApiInternalServerErrorResponse({
+    description: '전화번호 등록에 문제가 생김',
+  })
+  public async registerPhone(
+    @CurrentUser() { id }: Pick<User, 'id'>,
+    @Body() { phoneToken, otp }: PhoneTokenWithOtpDTO,
+  ) {
+    return await this.authService.registerPhone(id, phoneToken, otp);
   }
 }

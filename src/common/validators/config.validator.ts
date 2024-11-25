@@ -15,4 +15,7 @@ export const ConfigValidator = Joi.object({
   JWT_SECRET: Joi.string().required(),
   ACHE_TTL: Joi.number().default(60 * 1000),
   CACHE_MAX: Joi.number().default(100),
+  COOLSMS_API_KEY: Joi.string().required(),
+  COOLSMS_API_SECRET: Joi.string().required(),
+  COOLSMS_SENDER: Joi.string().required(),
 });
